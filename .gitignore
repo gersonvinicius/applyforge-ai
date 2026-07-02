@@ -13,3 +13,6 @@
 /.vercel
 coverage
 Thumbs.db
+.vercel
+
+/*.pdf

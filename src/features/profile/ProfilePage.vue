@@ -84,7 +84,7 @@ async function handleLinkedinResumeUpload(event: Event) {
   try {
     await profileStore.setLinkedinResumeAsset(file);
     const summary = await profileStore.importLinkedinResumeIntoProfile();
-    linkedinImportFeedback.value = `Importacao concluida: ${summary.experiencesAdded} experiencias, ${summary.educationsAdded} formacoes e ${summary.skillsAdded} competencias adicionadas.`;
+    linkedinImportFeedback.value = `Perfil sincronizado do PDF do LinkedIn: ${summary.experiencesAdded} experiencias, ${summary.educationsAdded} formacoes e ${summary.skillsAdded} competencias atualizadas.`;
     linkedinImportTone.value = 'success';
   } catch (error) {
     linkedinImportFeedback.value = error instanceof Error ? error.message : 'Falha ao importar o PDF do LinkedIn.';
@@ -114,7 +114,7 @@ async function handleResumeLayoutUpload(event: Event) {
 async function importExistingLinkedinResume() {
   try {
     const summary = await profileStore.importLinkedinResumeIntoProfile();
-    linkedinImportFeedback.value = `Importacao concluida: ${summary.experiencesAdded} experiencias, ${summary.educationsAdded} formacoes e ${summary.skillsAdded} competencias adicionadas.`;
+    linkedinImportFeedback.value = `Perfil sincronizado do PDF do LinkedIn: ${summary.experiencesAdded} experiencias, ${summary.educationsAdded} formacoes e ${summary.skillsAdded} competencias atualizadas.`;
     linkedinImportTone.value = 'success';
   } catch (error) {
     linkedinImportFeedback.value = error instanceof Error ? error.message : 'Falha ao importar o PDF do LinkedIn.';
@@ -296,10 +296,13 @@ async function importExistingLinkedinResume() {
                 <option v-for="option in experienceTypes" :key="option.value" :value="option.value">{{ option.label }}</option>
               </select>
             </label>
-            <label class="field-stack" style="align-content: end;">
+            <div class="field-stack checkbox-field">
               <span class="field-label">Atual?</span>
-              <input v-model="item.isCurrent" type="checkbox">
-            </label>
+              <label class="checkbox-inline">
+                <input v-model="item.isCurrent" type="checkbox">
+                <span class="inline-note">Cargo atual</span>
+              </label>
+            </div>
             <label class="field-stack" style="grid-column: 1 / -1;">
               <span class="field-label">Resumo</span>
               <textarea v-model="item.summary" class="textarea" placeholder="Resumo geral da experiencia."></textarea>
@@ -378,41 +381,25 @@ async function importExistingLinkedinResume() {
         </div>
       </SectionCard>
 
-      <SectionCard title="Competencias" subtitle="Categorias e evidencia do conhecimento localmente persistidas.">
+      <SectionCard title="Competencias" subtitle="Competencias importadas e manuais em formato mais compacto para leitura e manutencao.">
         <template #actions>
           <button class="btn btn-secondary" type="button" @click="profileStore.addSkill">Adicionar competencia</button>
         </template>
 
-        <div class="stack-md">
-          <article v-for="item in profileStore.skills" :key="item.id" class="entry-card">
-            <div class="field-grid">
-              <label class="field-stack">
-                <span class="field-label">Competencia</span>
-                <input v-model="item.name" class="field" placeholder="Laravel">
-              </label>
-              <label class="field-stack">
-                <span class="field-label">Categoria</span>
-                <select v-model="item.category" class="field">
-                  <option v-for="category in skillCategories" :key="category" :value="category">{{ category }}</option>
-                </select>
-              </label>
-              <label class="field-stack">
-                <span class="field-label">Nivel</span>
-                <select v-model="item.level" class="field">
-                  <option v-for="level in skillLevels" :key="level" :value="level">{{ level }}</option>
-                </select>
-              </label>
-              <label class="field-stack">
-                <span class="field-label">Evidencia</span>
-                <select v-model="item.evidenceType" class="field">
-                  <option v-for="evidence in evidenceTypes" :key="evidence" :value="evidence">{{ evidence }}</option>
-                </select>
-              </label>
-            </div>
-            <div class="toolbar" style="margin-top: 16px;">
-              <button class="btn btn-primary" type="button" @click="saveSkill(item)">Salvar competencia</button>
-              <button class="btn btn-secondary" type="button" @click="profileStore.removeSkill(item.id)">Remover</button>
-            </div>
+        <div class="compact-skill-list">
+          <article v-for="item in profileStore.skills" :key="item.id" class="skill-row">
+            <input v-model="item.name" class="field" placeholder="Laravel">
+            <select v-model="item.category" class="field">
+              <option v-for="category in skillCategories" :key="category" :value="category">{{ category }}</option>
+            </select>
+            <select v-model="item.level" class="field">
+              <option v-for="level in skillLevels" :key="level" :value="level">{{ level }}</option>
+            </select>
+            <select v-model="item.evidenceType" class="field">
+              <option v-for="evidence in evidenceTypes" :key="evidence" :value="evidence">{{ evidence }}</option>
+            </select>
+            <button class="btn btn-primary" type="button" @click="saveSkill(item)">Salvar</button>
+            <button class="btn btn-secondary" type="button" @click="profileStore.removeSkill(item.id)">Remover</button>
           </article>
         </div>
       </SectionCard>

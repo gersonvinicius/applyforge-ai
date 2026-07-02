@@ -334,6 +334,9 @@ export const useProfileStore = defineStore('profile', {
 
         await db.transaction('rw', db.profile, db.experiences, db.educations, db.skills, db.logs, async () => {
           await db.profile.put(merged.profile);
+          await db.experiences.where('profileId').equals(profile.id).delete();
+          await db.educations.where('profileId').equals(profile.id).delete();
+          await db.skills.where('profileId').equals(profile.id).delete();
 
           if (merged.experiencesToAdd.length > 0) {
             await db.experiences.bulkPut(merged.experiencesToAdd);
