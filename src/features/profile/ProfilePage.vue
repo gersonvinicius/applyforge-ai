@@ -121,6 +121,18 @@ async function importExistingLinkedinResume() {
     linkedinImportTone.value = 'error';
   }
 }
+
+async function clearProfileWithConfirmation() {
+  const confirmed = window.confirm('Limpar todo o perfil local? Isso removera dados base, experiencias, formacoes, competencias e PDFs salvos neste navegador.');
+
+  if (!confirmed) {
+    return;
+  }
+
+  await profileStore.clearProfileData();
+  linkedinImportFeedback.value = '';
+  linkedinImportTone.value = 'info';
+}
 </script>
 
 <template>
@@ -133,6 +145,9 @@ async function importExistingLinkedinResume() {
         </p>
       </div>
       <div class="toolbar">
+        <button class="btn btn-secondary" type="button" :disabled="profileStore.isClearingProfile" @click="clearProfileWithConfirmation">
+          {{ profileStore.isClearingProfile ? 'Limpando...' : 'Limpar perfil' }}
+        </button>
         <button class="btn btn-primary" type="button" @click="profileStore.saveProfile">Salvar perfil</button>
       </div>
     </header>

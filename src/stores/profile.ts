@@ -8,6 +8,7 @@ import type { LinkedInImportMergeSummary } from '@/services/linkedinResumeImport
 interface ProfileState {
   hydrated: boolean;
   isSaving: boolean;
+  isClearingProfile: boolean;
   isImportingLinkedinResume: boolean;
   profile: Profile | null;
   experiences: Experience[];
@@ -25,6 +26,7 @@ export const useProfileStore = defineStore('profile', {
   state: (): ProfileState => ({
     hydrated: false,
     isSaving: false,
+    isClearingProfile: false,
     isImportingLinkedinResume: false,
     profile: null,
     experiences: [],
@@ -107,6 +109,60 @@ export const useProfileStore = defineStore('profile', {
         await this.syncWorkspace();
       } finally {
         this.isSaving = false;
+      }
+    },
+
+    async clearProfileData() {
+      const profile = await this.ensureProfile();
+      const timestamp = nowIso();
+      const assetIds = [profile.linkedinResumeAssetId, profile.resumeLayoutAssetId].filter(Boolean) as string[];
+
+      this.isClearingProfile = true;
+
+      try {
+        const clearedProfile: Profile = {
+          ...profile,
+          fullName: '',
+          headline: '',
+          phone: '',
+          email: '',
+          city: '',
+          state: '',
+          country: 'Brasil',
+          linkedinUrl: '',
+          githubUrl: '',
+          baseSummary: '',
+          baseObjective: '',
+          targetSeniority: '',
+          preferredWorkModel: null,
+          salaryExpectation: '',
+          resumeTemplate: 'classic',
+          linkedinResumeAssetId: null,
+          resumeLayoutAssetId: null,
+          updatedAt: timestamp,
+          version: profile.version + 1
+        };
+
+        await db.transaction('rw', db.profile, db.experiences, db.educations, db.skills, db.assets, async () => {
+          await db.profile.put(clearedProfile);
+          await db.experiences.where('profileId').equals(profile.id).delete();
+          await db.educations.where('profileId').equals(profile.id).delete();
+          await db.skills.where('profileId').equals(profile.id).delete();
+
+          for (const assetId of assetIds) {
+            await db.assets.delete(assetId);
+          }
+        });
+
+        this.profile = clearedProfile;
+        this.experiences = [];
+        this.educations = [];
+        this.skills = [];
+        this.linkedinResumeAsset = null;
+        this.resumeLayoutAsset = null;
+        await this.syncWorkspace();
+      } finally {
+        this.isClearingProfile = false;
       }
     },
 
