@@ -1,0 +1,15 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+/.codex
+/.cursor/
+/.idea
+/.vscode
+/.zed
+/node_modules
+/dist
+/.vercel
+coverage
+Thumbs.db
