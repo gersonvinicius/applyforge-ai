@@ -45,7 +45,6 @@ interface LinkedInImportAiEnvelope {
     company?: string;
     role?: string;
     startDate?: string;
-    summary?: string;
     activities?: string[];
     highlights?: string[];
     technologies?: string[];
@@ -179,8 +178,8 @@ function normalizeLines(rawText: string): string[] {
     .filter((line) => !/^save to pdf from linkedin$/i.test(line));
 }
 
-function compactUrl(rawText: string): string {
-  return rawText
+function compactUrl(value: string): string {
+  return value
     .replace(/\s+/g, '')
     .replace(/\((LinkedIn|GitHub)\)/gi, '')
     .trim();
@@ -292,19 +291,37 @@ function detectPhone(rawText: string): string {
   return rawText.match(/(?:\+\d{1,3}\s*)?(?:\(?\d{2,3}\)?\s*)?(?:\d[\s.-]*){8,14}\d/)?.[0]?.trim() ?? '';
 }
 
-function detectUrl(rawText: string, kind: 'linkedin' | 'github'): string {
-  const compact = compactUrl(rawText);
+function detectUrl(lines: string[], kind: 'linkedin' | 'github'): string {
   const pattern = kind === 'linkedin'
-    ? /(?:https?:\/\/)?(?:[\w.-]+\.)?linkedin\.com\/[^\s)]+/i
-    : /(?:https?:\/\/)?(?:[\w.-]+\.)?github\.com\/[^\s)]+/i;
+    ? /(?:https?:\/\/)?(?:www\.)?linkedin\.com\/in\/[A-Za-z0-9\-_%/]+/i
+    : /(?:https?:\/\/)?(?:www\.)?github\.com\/[A-Za-z0-9_.-]+/i;
+  const domain = kind === 'linkedin' ? 'linkedin.com' : 'github.com';
+  let bestMatch = '';
 
-  const matched = compact.match(pattern)?.[0] ?? '';
+  for (let index = 0; index < lines.length; index += 1) {
+    const stitched = compactUrl(lines.slice(index, index + 4).join(''));
 
-  if (matched === '') {
+    if (!stitched.includes(domain)) {
+      continue;
+    }
+
+    const domainIndex = stitched.toLowerCase().indexOf(domain);
+    const candidate = stitched
+      .slice(domainIndex >= 4 && stitched.slice(domainIndex - 4, domainIndex).toLowerCase() === 'www.' ? domainIndex - 4 : domainIndex)
+      .split(/LinkedIn|GitHub|Principaiscompet|Certifications|Resumo|Summary|Experience|Experi/u)[0]
+      .replace(/[)>.,;]+$/g, '');
+    const matched = candidate.match(pattern)?.[0] ?? '';
+
+    if (matched.length > bestMatch.length) {
+      bestMatch = matched;
+    }
+  }
+
+  if (bestMatch === '') {
     return '';
   }
 
-  return matched.startsWith('http') ? matched : `https://${matched}`;
+  return bestMatch.startsWith('http') ? bestMatch : `https://${bestMatch}`;
 }
 
 function detectLocation(headerLines: string[]): { city: string; state: string; country: string } {
@@ -401,25 +418,24 @@ function looksLikeExperienceStart(lines: string[], index: number): boolean {
     && isDateRangeLine(lines[index + 2]);
 }
 
-function looksLikeEducationStart(lines: string[], index: number): boolean {
-  const current = normalizeWhitespace(lines[index] ?? '');
+function looksLikeEducationInstitution(line: string): boolean {
+  const normalized = normalizeHeading(line);
 
   if (
-    current === '' ||
-    isSectionHeading(current) ||
-    isDateRangeLine(current) ||
-    /^[·•(-]/.test(current) ||
-    looksLikeLocationLine(current)
+    line === '' ||
+    isSectionHeading(line) ||
+    isDateRangeLine(line) ||
+    /^[·•(-]/.test(line) ||
+    looksLikeLocationLine(line)
   ) {
     return false;
   }
 
-  const forwardWindow = lines
-    .slice(index + 1, index + 5)
-    .map((line) => normalizeWhitespace(line))
-    .join(' ');
+  if (line.includes(',')) {
+    return false;
+  }
 
-  return /(?:19|20)\d{2}/.test(forwardWindow);
+  return !/\bgraduacao\b|\bpos graduacao\b|\bespecializacao\b|\bbacharel\b|\btecnologia da informacao\b|\bsistemas de informacao\b|\bengenharia\b|\bmba\b|\bmestrado\b|\bdoutorado\b/.test(normalized);
 }
 
 function detectTechnologies(text: string): ImportedSkillInput[] {
@@ -439,20 +455,21 @@ function summarizeExperience(detailLines: string[]): string {
     .trim();
 }
 
+function extractSentences(detailLines: string[]): string[] {
+  return summarizeExperience(detailLines)
+    .split(/(?<=[.!?])\s+/)
+    .map((item) => normalizeWhitespace(item))
+    .filter((item) => item.length >= 24);
+}
+
 function buildActivities(detailLines: string[]): string[] {
-  return detailLines
-    .map((line) => cleanDetailLine(line))
-    .filter((line) => line.length >= 18)
-    .slice(0, 4);
+  const sentences = extractSentences(detailLines);
+  return [...new Set(sentences.slice(0, 2))];
 }
 
 function buildHighlights(detailLines: string[]): string[] {
-  const chunks = detailLines
-    .flatMap((line) => cleanDetailLine(line).split(/[.;]/))
-    .map((item) => normalizeWhitespace(item))
-    .filter((item) => item.length >= 24);
-
-  return [...new Set(chunks)].slice(0, 3);
+  const sentences = extractSentences(detailLines);
+  return [...new Set(sentences.slice(1, 3))];
 }
 
 function parseExperiences(lines: string[]): ImportedExperienceInput[] {
@@ -499,7 +516,7 @@ function parseExperiences(lines: string[]): ImportedExperienceInput[] {
       summary,
       activities: buildActivities(detailLines),
       technologies,
-      highlights: buildHighlights(detailLines)
+      highlights: []
     });
 
     index = cursor - 1;
@@ -549,20 +566,21 @@ function parseEducation(lines: string[]): ImportedEducationInput[] {
   const entries: ImportedEducationInput[] = [];
 
   for (let index = 0; index < lines.length; index += 1) {
-    if (!looksLikeEducationStart(lines, index)) {
+    const institution = normalizeWhitespace(lines[index] ?? '');
+
+    if (!looksLikeEducationInstitution(institution)) {
       continue;
     }
 
-    const institution = normalizeWhitespace(lines[index] ?? '');
     let cursor = index + 1;
     const detailLines: string[] = [];
 
-    while (cursor < lines.length && !isSectionHeading(lines[cursor]) && !looksLikeEducationStart(lines, cursor)) {
+    while (cursor < lines.length && !looksLikeEducationInstitution(lines[cursor])) {
       detailLines.push(normalizeWhitespace(lines[cursor]));
       cursor += 1;
     }
 
-    const joined = normalizeWhitespace(detailLines.join(' '));
+    const joined = normalizeWhitespace(detailLines.join(' ')).replace(/^·\s*/, '');
 
     if (joined === '' || !/(?:19|20)\d{2}/.test(joined)) {
       index = cursor - 1;
@@ -570,18 +588,20 @@ function parseEducation(lines: string[]): ImportedEducationInput[] {
     }
 
     const [coursePart, ...dateParts] = joined.split('·');
-    const course = normalizeWhitespace(coursePart.replace(/\(\s*$/g, ''));
+    const course = normalizeWhitespace(coursePart);
     const dateSource = normalizeWhitespace(dateParts.join(' ')) || joined;
     const parsedRange = parseDateRange(dateSource);
     const completionDate = parsedRange.isCurrent ? '' : parsedRange.endDate || parsedRange.startDate;
 
-    entries.push({
-      institution,
-      course,
-      degreeType: inferDegreeType(course),
-      status: parsedRange.isCurrent ? 'cursando' : 'concluido',
-      completionDate
-    });
+    if (course !== '') {
+      entries.push({
+        institution,
+        course,
+        degreeType: inferDegreeType(course),
+        status: parsedRange.isCurrent ? 'cursando' : 'concluido',
+        completionDate
+      });
+    }
 
     index = cursor - 1;
   }
@@ -660,20 +680,24 @@ async function enrichExperiencesWithAi(parsed: LinkedInResumeImportResult): Prom
   }
 
   const prompt = [
-    'Voce vai melhorar dados importados de um curriculo do LinkedIn.',
+    'Voce vai complementar dados importados de um curriculo do LinkedIn.',
     'Regras:',
     '- Nao invente fatos, datas, empresas, tecnologias ou resultados.',
-    '- Apenas reescreva com linguagem mais clara e profissional.',
-    '- summary: 1 paragrafo curto.',
-    '- activities: 2 a 4 itens objetivos.',
-    '- highlights: 1 a 3 itens de maior impacto.',
+    '- Nao altere nem reescreva o summary original; ele ja vem factual do curriculo.',
+    '- activities: gere 2 a 3 itens objetivos com base no texto factual da experiencia.',
+    '- highlights: gere 1 a 2 frases curtas mais atraentes para leitura de recrutador, sem mudar os fatos.',
     '- technologies: somente tecnologias citadas ou claramente inferiveis do texto factual.',
     '- baseObjective: crie um objetivo profissional curto e realista.',
     '- Responda somente JSON.',
     JSON.stringify({
       headline: parsed.profilePatch.headline ?? '',
       baseSummary: parsed.profilePatch.baseSummary ?? '',
-      experiences: parsed.experiences
+      experiences: parsed.experiences.map((item) => ({
+        company: item.company,
+        role: item.role,
+        startDate: item.startDate,
+        summary: item.summary
+      }))
     })
   ].join('\n');
 
@@ -702,12 +726,11 @@ async function enrichExperiencesWithAi(parsed: LinkedInResumeImportResult): Prom
 
         return {
           ...experience,
-          summary: normalizeWhitespace(String(enriched.summary ?? '')) || experience.summary,
           activities: Array.isArray(enriched.activities)
-            ? enriched.activities.map((item) => normalizeWhitespace(String(item))).filter(Boolean).slice(0, 4)
+            ? enriched.activities.map((item) => normalizeWhitespace(String(item))).filter(Boolean).slice(0, 3)
             : experience.activities,
           highlights: Array.isArray(enriched.highlights)
-            ? enriched.highlights.map((item) => normalizeWhitespace(String(item))).filter(Boolean).slice(0, 3)
+            ? enriched.highlights.map((item) => normalizeWhitespace(String(item))).filter(Boolean).slice(0, 2)
             : experience.highlights,
           technologies: Array.isArray(enriched.technologies)
             ? [...new Set(enriched.technologies.map((item) => normalizeWhitespace(String(item))).filter(Boolean))].slice(0, 8)
@@ -739,8 +762,8 @@ export async function extractLinkedInResumeImport(asset: BinaryAsset): Promise<L
       city: location.city,
       state: location.state,
       country: location.country,
-      linkedinUrl: detectUrl(rawText, 'linkedin'),
-      githubUrl: detectUrl(rawText, 'github'),
+      linkedinUrl: detectUrl(sections.header, 'linkedin'),
+      githubUrl: detectUrl(sections.header, 'github'),
       baseSummary: summary,
       baseObjective: inferBaseObjective(summary, headline)
     },
